@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>俺のTODO管理</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="app-title">
+        <strong>俺のTODO管理</strong>
+        <button class="icon-button" type="button" id="menuButton" title="メニュー">☰</button>
+      </div>
+      <div class="top-actions">
+        <label class="search-box">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="タイトル・内容で検索">
+        </label>
+        <select id="statusFilter" class="filter-select">
+          <option value="">フィルター</option>
+          <option>未着手</option>
+          <option>作業中</option>
+          <option>保留</option>
+          <option>完了</option>
+        </select>
+        <nav class="quick-links" id="quickLinks" aria-label="クイックリンク"></nav>
+        <div class="notification-wrap">
+          <button class="bell-button" type="button" id="notificationButton" title="通知">🔔<span id="notificationBadge">0</span></button>
+          <div class="notification-popover" id="notificationPopover" hidden>
+            <strong>通知</strong>
+            <div id="notificationList"></div>
+          </div>
+        </div>
+        <button class="primary-button" type="button" id="newTaskButton">＋ 新規タスク</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <button class="nav-item active" data-filter="all" title="タスク一覧"><span class="nav-icon">☷</span><span class="nav-label">タスク一覧</span><b id="countAll">0</b></button>
+        <div class="side-section">
+          <div class="side-heading"><span class="nav-label">ステータス</span></div>
+          <button class="nav-item" data-filter="todo" title="未着手"><span class="dot dot-gray"></span><span class="nav-label">未着手</span><b id="countTodo">0</b></button>
+          <button class="nav-item" data-filter="working" title="作業中"><span class="dot dot-blue"></span><span class="nav-label">作業中</span><b id="countWorking">0</b></button>
+          <button class="nav-item" data-filter="hold" title="保留"><span class="dot dot-orange"></span><span class="nav-label">保留</span><b id="countHold">0</b></button>
+          <button class="nav-item" data-filter="done" title="完了"><span class="dot dot-green"></span><span class="nav-label">完了</span><b id="countDone">0</b></button>
+        </div>
+        <div class="side-section">
+          <div class="side-heading"><span class="nav-label">種別</span></div>
+          <div id="typeNav" class="side-list"></div>
+        </div>
+        <div class="side-section">
+          <div class="side-heading"><span class="nav-label">カテゴリ</span></div>
+          <div id="categoryNav" class="side-list"></div>
+        </div>
+      </aside>
+
+      <section class="task-main">
+        <section class="task-list-panel">
+          <div class="panel-head">
+            <h1>タスク一覧 <span id="taskTotal">(0件)</span></h1>
+            <div class="panel-actions">
+              <button class="ghost-button compact-button" type="button" id="reloadButton">再読み込み</button>
+              <button class="primary-button compact-button" type="button" id="newTaskButtonInline">＋ 新規タスク</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="task-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>タイトル</th>
+                  <th>進捗</th>
+                  <th>ステータス</th>
+                  <th>優先度</th>
+                  <th>期限</th>
+                  <th>ChatGPT</th>
+                  <th>Drive</th>
+                  <th>更新日</th>
+                </tr>
+              </thead>
+              <tbody id="taskTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <form class="detail-grid" id="taskForm">
+          <input type="hidden" id="taskId">
+          <section class="detail-panel">
+            <div class="detail-id">ID: <span id="detailId">-</span></div>
+            <label class="title-field">
+              <input id="title" placeholder="タスクタイトル" required>
+            </label>
+            <label class="field">
+              <span>内容</span>
+              <textarea id="body" rows="5"></textarea>
+            </label>
+            <div class="mini-grid">
+              <label class="field"><span>カテゴリ</span><input id="category" list="categoryOptions"></label>
+              <label class="field"><span>種別</span><input id="type" list="typeOptions"></label>
+              <label class="field"><span>ステータス</span><select id="status"><option>未着手</option><option>作業中</option><option>保留</option><option>完了</option></select></label>
+              <label class="field"><span>優先度</span><select id="priority"><option>高</option><option selected>中</option><option>低</option></select></label>
+              <label class="field"><span>進捗（%）</span><input type="number" id="progress" min="0" max="100" step="1"></label>
+              <label class="field"><span>期限</span><input type="date" id="dueDate"></label>
+              <label class="field check-field"><input type="checkbox" id="todayFlag"><span>今日やる</span></label>
+            </div>
+            <label class="field">
+              <span>次アクション</span>
+              <input id="nextAction">
+            </label>
+            <div class="mini-grid">
+              <label class="field"><span>関連URL</span><input id="relatedUrl"></label>
+              <label class="field"><span>ChatGPT URL</span><input id="chatgptUrl"></label>
+            </div>
+            <label class="field">
+              <span>フォルダURL</span>
+              <input id="folderUrl" readonly>
+            </label>
+            <section class="idea-panel">
+              <div class="sub-head">
+                <button class="link-button" type="button" id="toggleIdeasButton">改善アイディア（0）</button>
+                <button class="ghost-button compact-button" type="button" id="newIdeaButton">追加</button>
+              </div>
+              <div class="segmented small-tabs" role="tablist" aria-label="改善アイディア表示">
+                <button class="active" type="button" data-idea-view="open">未反映</button>
+                <button type="button" data-idea-view="done">反映済み</button>
+              </div>
+              <div id="ideaList" class="idea-list" hidden></div>
+            </section>
+            <div class="detail-actions">
+              <button class="primary-button" type="submit" id="taskSaveButton">保存</button>
+              <button class="ghost-button" type="button" id="deleteButton">削除</button>
+            </div>
+          </section>
+
+          <section class="detail-panel">
+            <section class="action-center-panel">
+              <div class="action-center-heading">
+                <span class="action-center-mark">🔔</span>
+                <div>
+                  <h2>通知センター</h2>
+                  <p>要対応・エラー・完了通知</p>
+                </div>
+              </div>
+              <div class="segmented notification-tabs" role="tablist" aria-label="通知表示">
+                <button class="active" type="button" data-notification-view="unread">未確認</button>
+                <button type="button" data-notification-view="archive">アーカイブ</button>
+              </div>
+              <div id="actionCenterList" class="notification-card-list"></div>
+            </section>
+          </section>
+        </form>
+      </section>
+
+      <aside class="right-rail">
+        <section class="schedule-panel">
+          <div class="schedule-head">
+            <h2>今日のスケジュール</h2>
+            <button class="ghost-button compact-button" type="button" id="calendarRefreshButton">更新</button>
+          </div>
+          <div class="schedule-date" id="todayLabel"></div>
+          <div class="current-routine" id="currentRoutineLine"></div>
+          <div class="timeline" id="timeline"></div>
+          <div class="legend">
+            <span><i class="legend-event"></i>予定</span>
+            <span><i class="legend-task"></i>タスク</span>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <dialog id="ideaDialog" class="modal">
+      <form class="modal-card idea-form" id="ideaForm" method="dialog">
+        <input type="hidden" id="ideaId">
+        <div class="modal-head">
+          <h2>改善アイディア</h2>
+          <button class="icon-button" type="button" data-close="ideaDialog">×</button>
+        </div>
+        <label class="field"><span>タイトル</span><input id="ideaTitle" required></label>
+        <label class="field"><span>内容</span><textarea id="ideaBody" rows="4"></textarea></label>
+        <div class="idea-modal-grid">
+          <label class="field"><span>ステータス</span><select id="ideaStatus"><option>未着手</option><option>検討中</option><option>採用</option><option>保留</option><option>完了</option><option>反映済み</option></select></label>
+          <label class="field"><span>優先度</span><select id="ideaPriority"><option>高</option><option selected>中</option><option>低</option></select></label>
+        </div>
+        <div class="detail-actions">
+          <button class="primary-button" type="submit">保存</button>
+          <button class="ghost-button" type="button" id="deleteIdeaButton">削除</button>
+        </div>
+      </form>
+    </dialog>
+
+    <datalist id="categoryOptions"></datalist>
+    <datalist id="typeOptions"></datalist>
+    <div class="toast" id="toast"></div>
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
