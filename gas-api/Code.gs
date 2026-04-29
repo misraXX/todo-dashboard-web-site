@@ -81,6 +81,7 @@ function getInitialData() {
     quickLinks: getQuickLinks(),
     events: getCachedTodayEvents_(),
     routines: getRoutines(),
+    routineLogs: getRoutineLogs(),
     improvementIdeas: getImprovementIdeas(),
     notifications: getNotifications(),
     today: formatDate_(new Date(), 'yyyy-MM-dd')
@@ -196,6 +197,14 @@ function getRoutines() {
     .sort(function(a, b) {
       return String(a['実行目安時刻'] || '').localeCompare(String(b['実行目安時刻'] || ''));
     });
+}
+
+function getRoutineLogs() {
+  return readSheetAsObjects_(SHEETS.ROUTINE_LOGS).map(function(log) {
+    log['実行日'] = normalizeDateKey_(log['実行日']);
+    log['完了フラグ'] = toBool_(log['完了フラグ']);
+    return log;
+  });
 }
 
 function addTask(task) {

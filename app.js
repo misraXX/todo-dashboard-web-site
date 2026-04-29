@@ -5,6 +5,7 @@ const state = {
   quickLinks: [],
   events: [],
   routines: [],
+  routineLogs: [],
   improvementIdeas: [],
   autoLogs: [],
   selectedTaskId: '',
@@ -36,7 +37,8 @@ function bindElements() {
     'notificationPopover', 'notificationList', 'typeNav', 'categoryNav', 'taskTableBody', 'newTaskButton', 'newTaskButtonInline',
     'taskForm', 'taskSaveButton', 'taskId', 'detailId', 'title', 'body', 'status', 'priority', 'progress', 'dueDate', 'todayFlag',
     'category', 'type', 'relatedUrl', 'chatgptUrl', 'folderUrl', 'nextAction', 'deleteButton', 'timeline', 'todayLabel',
-    'calendarRefreshButton', 'currentRoutineLine', 'actionCenterList', 'toggleIdeasButton', 'newIdeaButton',
+    'calendarRefreshButton', 'currentRoutineLine', 'weeklyRange', 'weeklyReport',
+    'actionCenterList', 'toggleIdeasButton', 'newIdeaButton',
     'ideaList', 'ideaDialog', 'ideaForm', 'ideaId', 'ideaTitle', 'ideaBody', 'ideaStatus', 'ideaPriority',
     'deleteIdeaButton', 'toast', 'categoryOptions', 'typeOptions'
   ].forEach((id) => {
@@ -49,7 +51,7 @@ function bindEvents() {
     document.body.classList.toggle('sidebar-collapsed');
     localStorage.setItem('todoSidebarCollapsed', document.body.classList.contains('sidebar-collapsed') ? '1' : '0');
   });
-  els.reloadButton.addEventListener('click', loadInitialData);
+  els.reloadButton.addEventListener('click', (event) => runButtonTask(event.currentTarget, '読み込み中...', loadInitialData));
   els.newTaskButton.addEventListener('click', () => selectTask(null));
   els.newTaskButtonInline.addEventListener('click', () => selectTask(null));
   els.searchInput.addEventListener('input', renderTasks);
@@ -60,8 +62,8 @@ function bindEvents() {
   els.taskForm.addEventListener('input', () => {
     state.isEditingTask = true;
   });
-  els.deleteButton.addEventListener('click', deleteSelectedTask);
-  els.calendarRefreshButton.addEventListener('click', refreshCalendar);
+  els.deleteButton.addEventListener('click', (event) => deleteSelectedTask(event.currentTarget));
+  els.calendarRefreshButton.addEventListener('click', (event) => refreshCalendar(event.currentTarget));
   els.notificationButton.addEventListener('click', () => {
     els.notificationPopover.hidden = !els.notificationPopover.hidden;
   });
@@ -70,7 +72,7 @@ function bindEvents() {
   });
   els.newIdeaButton.addEventListener('click', () => openIdeaModal(null));
   els.ideaForm.addEventListener('submit', saveImprovementIdea);
-  els.deleteIdeaButton.addEventListener('click', deleteSelectedIdea);
+  els.deleteIdeaButton.addEventListener('click', (event) => deleteSelectedIdea(event.currentTarget));
   document.querySelectorAll('[data-notification-view]').forEach((button) => {
     button.addEventListener('click', () => {
       document.querySelectorAll('[data-notification-view]').forEach((item) => item.classList.remove('active'));
@@ -108,6 +110,23 @@ function restoreSidebarState() {
   document.body.classList.toggle('sidebar-collapsed', localStorage.getItem('todoSidebarCollapsed') === '1');
 }
 
+async function runButtonTask(button, busyText, task) {
+  if (button?.disabled) return undefined;
+  const originalText = button?.textContent;
+  if (button) {
+    button.disabled = true;
+    if (busyText) button.textContent = busyText;
+  }
+  try {
+    return await task();
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
 async function loadInitialData() {
   toast('読み込み中...');
   const selectedId = state.selectedTaskId;
@@ -118,6 +137,7 @@ async function loadInitialData() {
     state.quickLinks = data.quickLinks || [];
     state.events = data.events || [];
     state.routines = data.routines || [];
+    state.routineLogs = data.routineLogs || [];
     state.improvementIdeas = data.improvementIdeas || [];
     state.autoLogs = data.notifications || [];
     els.todayLabel.textContent = formatDateLabel(data.today);
@@ -143,6 +163,7 @@ function renderAll() {
   renderSideFilters();
   renderTasks();
   renderTimeline();
+  renderWeeklyReport();
   renderOptions();
   renderActionCenter();
   renderNotifications();
@@ -218,14 +239,14 @@ function renderTasks() {
     tr.className = task.ID === state.selectedTaskId ? 'selected' : '';
     tr.innerHTML = `
       <td>${escapeHtml(shortId(task.ID))}</td>
-      <td>${escapeHtml(task['タイトル'])}</td>
+      <td><span class="task-title-cell title">${escapeHtml(task['タイトル'])}</span></td>
       <td>${progressBar(task['進捗'])}</td>
       <td>${badge(task['ステータス'] || '未着手', statusClass(task['ステータス']))}</td>
       <td>${badge(task['優先度'] || '中', priorityClass(task['優先度']))}</td>
-      <td>${escapeHtml(task['期限'] || '—')}</td>
+      <td>${escapeHtml(dateOnly(task['期限']) || '—')}</td>
       <td>${taskUrlLink(task['ChatGPT URL'], 'ChatGPT')}</td>
       <td>${taskUrlLink(task['フォルダURL'], 'Drive')}</td>
-      <td>${escapeHtml(dateOnly(task['更新日']))}</td>
+      <td>${escapeHtml(dateOnly(task['更新日']) || '—')}</td>
     `;
     tr.addEventListener('click', () => selectTask(task.ID));
     els.taskTableBody.appendChild(tr);
@@ -314,19 +335,17 @@ async function saveTask(event) {
   }
 }
 
-async function deleteSelectedTask() {
+async function deleteSelectedTask(button) {
   const id = els.taskId.value;
   if (!id || !confirm('このタスクを削除しますか？')) return;
-  try {
+  return runButtonTask(button, '削除中...', async () => {
     await apiPost('deleteTask', { id });
     state.tasks = state.tasks.filter((task) => task.ID !== id);
     state.isEditingTask = false;
     renderAll();
     selectTask(filteredTasks()[0] ? filteredTasks()[0].ID : null);
     toast('削除しました');
-  } catch (error) {
-    showError(error);
-  }
+  }).catch(showError);
 }
 
 function formToTask() {
@@ -358,7 +377,8 @@ function applySelectColor(select, className) {
   select.classList.add(className || 'badge-normal');
 }
 
-async function refreshCalendar() {
+async function refreshCalendar(button) {
+  return runButtonTask(button, '更新中...', async () => {
   toast('予定を取得中...');
   try {
     state.events = await apiGet('refreshTodayEvents');
@@ -367,6 +387,7 @@ async function refreshCalendar() {
   } catch (error) {
     showError(error);
   }
+  });
 }
 
 function renderActionCenter() {
@@ -400,7 +421,7 @@ function renderActionCenter() {
     card.querySelectorAll('[data-notice-action]').forEach((button) => {
       button.addEventListener('click', (event) => {
         event.preventDefault();
-        handleNoticeAction(notice, button.dataset.noticeAction, card);
+        handleNoticeAction(notice, button.dataset.noticeAction, card, button);
       });
     });
     els.actionCenterList.appendChild(card);
@@ -505,10 +526,10 @@ function notificationActionButtons(notice) {
   return buttons.join('');
 }
 
-async function handleNoticeAction(notice, action, card) {
+async function handleNoticeAction(notice, action, card, button) {
   const source = state.autoLogs.find((log) => (log.id || log.ID || `${log.title || log['タイトル']}_${log.created_at || log['発生時刻'] || log.time || ''}`) === notice.id);
   if (action === 'read') {
-    try {
+    return runButtonTask(button, '処理中...', async () => {
       const saved = await apiPost('markNotificationRead', { id: notice.id });
       if (source) {
         source.is_read = true;
@@ -520,10 +541,9 @@ async function handleNoticeAction(notice, action, card) {
       renderActionCenter();
       renderNotifications();
       toast('通知をアーカイブしました');
-    } catch (error) {
-      showError(error);
-    }
+    }).catch(showError);
   }
+  return undefined;
 }
 
 function renderTimeline() {
@@ -580,17 +600,160 @@ function buildTimelineItems() {
 }
 
 function renderCurrentRoutine() {
-  const now = new Date();
-  const currentHour = now.getHours();
-  const routines = state.routines.filter((routine) => {
-    const start = todayAt(formatTimeOnly(routine['実行目安時刻'] || '00:00'));
-    return start.getHours() === currentHour;
-  });
+  const routines = currentDueRoutines();
   if (!routines.length) {
-    els.currentRoutineLine.textContent = 'この時間帯のルーティンはありません';
+    els.currentRoutineLine.innerHTML = '';
     return;
   }
-  els.currentRoutineLine.textContent = `この時間帯のルーティン: ${routines.map((routine) => `${formatTimeOnly(routine['実行目安時刻'])} ${routine['ルーティン名']}`).join(' / ')}`;
+  els.currentRoutineLine.innerHTML = `
+    <span class="routine-line-title">この時間帯のルーティン:</span>
+    <div class="routine-line-items">
+      ${routines.map((routine) => `
+        <label class="routine-check-row">
+          <input type="checkbox" data-routine-id="${escapeAttr(routine.ID)}">
+          <span class="routine-check-name">${escapeHtml(routine['ルーティン名'])}</span>
+        </label>
+      `).join('')}
+    </div>
+  `;
+  els.currentRoutineLine.querySelectorAll('[data-routine-id]').forEach((input) => {
+    input.addEventListener('change', () => setRoutineCompleted(input.dataset.routineId, input.checked, input));
+  });
+}
+
+function currentDueRoutines() {
+  const now = new Date();
+  return state.routines.filter((routine) => {
+    if (isRoutineCompletedToday(routine)) return false;
+    const target = todayAt(formatTimeOnly(routine['実行目安時刻'] || '00:00'));
+    const diffMinutes = Math.abs(now.getTime() - target.getTime()) / 60000;
+    return diffMinutes <= 30;
+  });
+}
+
+function isRoutineCompletedToday(routine) {
+  if (routine.completed) return true;
+  const todayKey = dateKey(new Date());
+  return state.routineLogs.some((log) => (
+    String(log['ルーティンID']) === String(routine.ID)
+    && dateKey(log['実行日']) === todayKey
+    && toBool(log['完了フラグ'])
+  ));
+}
+
+async function setRoutineCompleted(routineId, completed, input) {
+  if (!routineId || input.disabled) return;
+  input.disabled = true;
+  try {
+    const saved = await apiPost('setRoutineLog', { routineId, completed: Boolean(completed) });
+    const routine = state.routines.find((item) => String(item.ID) === String(routineId));
+    if (routine) routine.completed = Boolean(saved.completed);
+    upsertRoutineLog(routineId, Boolean(saved.completed));
+    renderCurrentRoutine();
+    renderWeeklyReport();
+    toast(saved.completed ? 'ルーティンを完了しました' : 'ルーティンを未完了に戻しました');
+  } catch (error) {
+    input.checked = !completed;
+    showError(error);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+function upsertRoutineLog(routineId, completed) {
+  const todayKey = dateKey(new Date());
+  const existing = state.routineLogs.find((log) => String(log['ルーティンID']) === String(routineId) && dateKey(log['実行日']) === todayKey);
+  if (existing) {
+    existing['完了フラグ'] = completed;
+    return;
+  }
+  state.routineLogs.push({
+    ID: `local_${routineId}_${todayKey}`,
+    'ルーティンID': routineId,
+    '実行日': todayKey,
+    '完了フラグ': completed
+  });
+}
+
+function renderWeeklyReport() {
+  if (!els.weeklyReport) return;
+  const range = currentWeekRange();
+  els.weeklyRange.textContent = `${dateOnly(range.start)} - ${dateOnly(range.end)}`;
+  const tasksThisWeek = state.tasks.filter((task) => isDateInRange(task['更新日'], range.start, range.end));
+  const completedThisWeek = tasksThisWeek.filter((task) => task['ステータス'] === '完了').length;
+  const averageProgress = average(state.tasks.map((task) => Number(task['進捗'] || 0)));
+  const statusCounts = countByField(state.tasks, 'ステータス');
+  const categoryProgress = progressByField('カテゴリ');
+  const typeProgress = progressByField('種別');
+  const routineLogsThisWeek = state.routineLogs.filter((log) => isDateInRange(log['実行日'], range.start, range.end));
+  const routineDone = routineLogsThisWeek.filter((log) => toBool(log['完了フラグ'])).length;
+  const routineRate = routineLogsThisWeek.length ? Math.round((routineDone / routineLogsThisWeek.length) * 100) : 0;
+
+  els.weeklyReport.innerHTML = `
+    <div class="report-metrics">
+      ${reportMetric('完了タスク', `${completedThisWeek}件`)}
+      ${reportMetric('更新タスク', `${tasksThisWeek.length}件`)}
+      ${reportMetric('平均進捗', `${Math.round(averageProgress)}%`)}
+      ${reportMetric('ルーティン達成率', `${routineRate}%`)}
+    </div>
+    <div class="report-block">
+      <h3>ステータス別件数</h3>
+      <div class="report-chip-list">${Object.keys(statusCounts).map((key) => reportChip(key || '未設定', `${statusCounts[key]}件`, statusClass(key))).join('')}</div>
+    </div>
+    <div class="report-block">
+      <h3>カテゴリ別進捗</h3>
+      ${reportProgressList(categoryProgress)}
+    </div>
+    <div class="report-block">
+      <h3>種別ごとの進捗</h3>
+      ${reportProgressList(typeProgress)}
+    </div>
+  `;
+}
+
+function reportMetric(label, value) {
+  return `<div class="report-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function reportChip(label, value, className) {
+  return `<span class="report-chip ${className || 'badge-normal'}"><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`;
+}
+
+function progressByField(field) {
+  const groups = state.tasks.reduce((map, task) => {
+    const key = task[field] || '未設定';
+    if (!map[key]) map[key] = [];
+    map[key].push(Number(task['進捗'] || 0));
+    return map;
+  }, {});
+  return Object.keys(groups)
+    .sort()
+    .map((key) => ({ label: key, progress: Math.round(average(groups[key])) }));
+}
+
+function reportProgressList(items) {
+  if (!items.length) return '<div class="report-empty">データがありません</div>';
+  return `<div class="report-progress-list">${items.map((item) => `
+    <div class="report-progress-row">
+      <span>${escapeHtml(item.label)}</span>
+      <div class="report-progress-track"><i style="width:${clamp(item.progress, 0, 100)}%"></i></div>
+      <b>${item.progress}%</b>
+    </div>
+  `).join('')}</div>`;
+}
+
+function countByField(items, field) {
+  return items.reduce((map, item) => {
+    const key = item[field] || '未設定';
+    map[key] = (map[key] || 0) + 1;
+    return map;
+  }, {});
+}
+
+function average(values) {
+  const numbers = values.map(Number).filter((value) => !Number.isNaN(value));
+  if (!numbers.length) return 0;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
 }
 
 function taskIdeaCount(taskId) {
@@ -633,8 +796,8 @@ function renderTaskIdeas() {
       </div>
     `;
     row.querySelector('[data-idea-action="edit"]')?.addEventListener('click', () => openIdeaModal(idea));
-    row.querySelector('[data-idea-action="delete"]')?.addEventListener('click', () => deleteImprovementIdeaById(idea.ID));
-    row.querySelector('[data-idea-action="done"]')?.addEventListener('click', () => markImprovementDone(idea.ID));
+    row.querySelector('[data-idea-action="delete"]')?.addEventListener('click', (event) => deleteImprovementIdeaById(idea.ID, false, event.currentTarget));
+    row.querySelector('[data-idea-action="done"]')?.addEventListener('click', (event) => markImprovementDone(idea.ID, event.currentTarget));
     els.ideaList.appendChild(row);
   });
 }
@@ -656,6 +819,12 @@ function openIdeaModal(idea) {
 
 async function saveImprovementIdea(event) {
   event.preventDefault();
+  const saveButton = els.ideaForm.querySelector('button[type="submit"]');
+  if (saveButton?.disabled) return;
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = '保存中...';
+  }
   const item = {
     ID: els.ideaId.value,
     TaskID: state.selectedTaskId,
@@ -676,41 +845,42 @@ async function saveImprovementIdea(event) {
     toast('改善アイディアを保存しました');
   } catch (error) {
     showError(error);
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = '保存';
+    }
   }
 }
 
-async function deleteSelectedIdea() {
+async function deleteSelectedIdea(button) {
   const id = els.ideaId.value;
   if (!id) return;
-  await deleteImprovementIdeaById(id, true);
+  await deleteImprovementIdeaById(id, true, button);
 }
 
-async function deleteImprovementIdeaById(id, closeDialog = false) {
+async function deleteImprovementIdeaById(id, closeDialog = false, button) {
   if (!id || !confirm('この改善アイディアを削除しますか？')) return;
-  try {
+  return runButtonTask(button, '削除中...', async () => {
     await apiPost('deleteImprovementIdea', { id });
     state.improvementIdeas = state.improvementIdeas.filter((idea) => idea.ID !== id);
     if (closeDialog) els.ideaDialog.close();
     renderTasks();
     renderTaskIdeas();
     toast('削除しました');
-  } catch (error) {
-    showError(error);
-  }
+  }).catch(showError);
 }
 
-async function markImprovementDone(id) {
+async function markImprovementDone(id, button) {
   if (!id) return;
-  try {
+  return runButtonTask(button, '反映中...', async () => {
     const saved = await apiPost('markImprovementDone', { id });
     const index = state.improvementIdeas.findIndex((idea) => idea.ID === saved.ID);
     if (index >= 0) state.improvementIdeas.splice(index, 1, saved);
     renderTasks();
     renderTaskIdeas();
     toast('反映済みにしました');
-  } catch (error) {
-    showError(error);
-  }
+  }).catch(showError);
 }
 
 function renderOptions() {
@@ -819,7 +989,7 @@ function showError(error) {
 
 function formatDateLabel(value) {
   const date = value ? new Date(value + 'T00:00:00') : new Date();
-  return new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).format(date);
+  return new Intl.DateTimeFormat('ja-JP', { month: '2-digit', day: '2-digit', weekday: 'short' }).format(date);
 }
 
 function formatTime(value) {
@@ -856,8 +1026,45 @@ function formatTimeOnly(value) {
 function dateOnly(value) {
   if (!value) return '';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
-  return date.toISOString().slice(0, 10);
+  if (Number.isNaN(date.getTime())) {
+    const match = String(value).match(/(?:\d{4}[-/])?(\d{1,2})[-/](\d{1,2})/);
+    return match ? `${match[1].padStart(2, '0')}/${match[2].padStart(2, '0')}` : String(value);
+  }
+  return new Intl.DateTimeFormat('ja-JP', { month: '2-digit', day: '2-digit' }).format(date);
+}
+
+function dateKey(value) {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const match = value.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (match) return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function currentWeekRange() {
+  const today = new Date();
+  const start = new Date(today);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+function isDateInRange(value, start, end) {
+  const key = dateKey(value);
+  if (!key) return false;
+  const date = new Date(`${key}T00:00:00`);
+  return date >= start && date <= end;
 }
 
 function shortId(id) {
