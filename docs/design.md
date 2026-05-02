@@ -162,6 +162,38 @@ DB: Googleスプレッドシート
 | 作成日 | 作成日時 |
 | 更新日 | 更新日時 |
 
+### QuickTodos
+
+クイックTODOを一時的に管理するシート。必要に応じて案件化して `Tasks` に移す。
+新規列は既存データ保護のため末尾に追加する。
+
+| 列 | 内容 |
+| --- | --- |
+| ID | QuickTodo ID |
+| タイトル | TODO名 |
+| 完了フラグ | boolean |
+| 作成日 | 作成日時 |
+| 更新日 | 更新日時 |
+| 参考URL | Amazon、記事、メモなど外部リンク。空欄可 |
+| 期限 | yyyy-MM-dd。空欄可 |
+| 優先度 | 高 / 中 / 低 |
+
+### ShoppingList
+
+買い物リストを管理するシート。
+新規列は既存データ保護のため末尾に追加する。
+
+| 列 | 内容 |
+| --- | --- |
+| ID | 買い物リストID |
+| 商品名 | 商品名 |
+| 完了フラグ | boolean |
+| 作成日 | 作成日時 |
+| 更新日 | 更新日時 |
+| 参考URL | 商品ページなど外部リンク。空欄可 |
+| カテゴリ | 任意 |
+| 数量 | 任意 |
+
 ## API設計
 
 GAS Web AppのURLへ `action` を渡す。
@@ -177,6 +209,8 @@ GAS Web AppのURLへ `action` を渡す。
 - `getRoutines`
 - `getImprovementIdeas`
 - `getNotifications`
+- `getQuickTodos`
+- `getShoppingList`
 
 ### POST
 
@@ -200,6 +234,13 @@ JSON body:
 - `deleteImprovementIdea`
 - `markImprovementDone`
 - `markNotificationRead`
+- `addQuickTodo`
+- `updateQuickTodo`
+- `deleteQuickTodo`
+- `convertQuickTodoToTask`
+- `addShoppingItem`
+- `updateShoppingItem`
+- `deleteShoppingItem`
 
 ## タスク作成
 
@@ -214,6 +255,24 @@ JSON body:
 - 通常表示は未反映のみ
 - `反映済み` タブで反映済みアイディアを表示する
 - `markImprovementDone(id)` は対象行の `ステータス` を `反映済み`、`更新日` を現在日時に更新する
+
+## QuickTodos / ShoppingList
+
+- `QuickTodos` と `ShoppingList` は独立ページとして表示し、案件管理ダッシュボードの右カラムには表示しない
+- ページ切り替えはヘッダーのボタンで行う
+- ヘッダーは全ページ共通で表示する
+- ページ状態は `dashboard` / `quickTodos` / `shoppingList` を持つ
+- ページ切り替え時は現在ページのUIのみを描画し、非アクティブページは画面DOMから外す
+- `dashboard` 以外では Tasks / 通知センター / カレンダー / ウィークリーレポートを表示しない
+- 入力フォームには本文と `参考URL` を持つ
+- `参考URL` は空欄可。URL形式でなくても保存可能とする
+- 表示時は `参考URL` がある場合のみ小さめpill型の `開く` ボタンを表示し、`target="_blank"` で開く
+- `QuickTodos` は未完了 / 完了済み切り替え、期限、優先度、編集、削除を持つ
+- `QuickTodos` は `案件化` ボタンで `Tasks` に通常タスクとして追加できる
+- `QuickTodos` の案件化は既存の `Tasks` 構造を変更しない
+- `ShoppingList` は未購入 / 購入済み切り替え、カテゴリ、数量、編集、削除を持つ
+- `ShoppingList` はチェック状態を保存できる
+- 通知センターには影響を与えない
 
 ## 通知センター
 

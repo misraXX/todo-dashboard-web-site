@@ -5,7 +5,9 @@ const SHEETS = {
   ROUTINES: 'Routines',
   ROUTINE_LOGS: 'RoutineLogs',
   IMPROVEMENT_IDEAS: 'ImprovementIdeas',
-  NOTIFICATIONS: 'Notifications'
+  NOTIFICATIONS: 'Notifications',
+  QUICK_TODOS: 'QuickTodos',
+  SHOPPING_LIST: 'ShoppingList'
 };
 
 const TASK_PARENT_FOLDER_ID = '13ieQmaXSYh3UeUPkfputJioe3tQJh6pG';
@@ -23,7 +25,9 @@ const HEADERS = {
   Notifications: [
     'ID', '種別', 'タイトル', '内容', 'ステータス', '優先度', '発生時刻', 'リンクURL', 'リンクラベル',
     '確認済みフラグ', '要対応フラグ', '所要時間', '詳細', '作成日', '更新日'
-  ]
+  ],
+  QuickTodos: ['ID', 'タイトル', '完了フラグ', '作成日', '更新日', '参考URL', '期限', '優先度'],
+  ShoppingList: ['ID', '商品名', '完了フラグ', '作成日', '更新日', '参考URL', 'カテゴリ', '数量']
 };
 
 function doGet(e) {
@@ -59,6 +63,8 @@ function routeGet_(action, params) {
   if (action === 'getRoutines') return getRoutines();
   if (action === 'getImprovementIdeas') return getImprovementIdeas();
   if (action === 'getNotifications') return getNotifications();
+  if (action === 'getQuickTodos') return getQuickTodos();
+  if (action === 'getShoppingList') return getShoppingList();
   throw new Error('Unknown GET action: ' + action);
 }
 
@@ -72,6 +78,13 @@ function routePost_(action, payload) {
   if (action === 'deleteImprovementIdea') return deleteImprovementIdea(payload.id);
   if (action === 'markImprovementDone') return markImprovementDone(payload.id);
   if (action === 'markNotificationRead') return markNotificationRead(payload.id);
+  if (action === 'addQuickTodo') return addQuickTodo(payload);
+  if (action === 'updateQuickTodo') return updateQuickTodo(payload);
+  if (action === 'deleteQuickTodo') return deleteQuickTodo(payload.id);
+  if (action === 'convertQuickTodoToTask') return convertQuickTodoToTask(payload.id);
+  if (action === 'addShoppingItem') return addShoppingItem(payload);
+  if (action === 'updateShoppingItem') return updateShoppingItem(payload);
+  if (action === 'deleteShoppingItem') return deleteShoppingItem(payload.id);
   throw new Error('Unknown POST action: ' + action);
 }
 
@@ -84,6 +97,8 @@ function getInitialData() {
     routineLogs: getRoutineLogs(),
     improvementIdeas: getImprovementIdeas(),
     notifications: getNotifications(),
+    quickTodos: getQuickTodos(),
+    shoppingList: getShoppingList(),
     today: formatDate_(new Date(), 'yyyy-MM-dd')
   };
 }
@@ -278,6 +293,78 @@ function getNotifications() {
     });
 }
 
+function getQuickTodos() {
+  return readSheetAsObjects_(SHEETS.QUICK_TODOS)
+    .sort(function(a, b) {
+      return Number(toBool_(a['完了フラグ'])) - Number(toBool_(b['完了フラグ']))
+        || String(b['更新日'] || '').localeCompare(String(a['更新日'] || ''));
+    });
+}
+
+function getShoppingList() {
+  return readSheetAsObjects_(SHEETS.SHOPPING_LIST)
+    .sort(function(a, b) {
+      return Number(toBool_(a['完了フラグ'])) - Number(toBool_(b['完了フラグ']))
+        || String(b['更新日'] || '').localeCompare(String(a['更新日'] || ''));
+    });
+}
+
+function addQuickTodo(item) {
+  const now = new Date();
+  const row = normalizeQuickTodo_(item, generateId_('qt'), now, now);
+  appendObject_(SHEETS.QUICK_TODOS, row);
+  return serializeObject_(row);
+}
+
+function updateQuickTodo(item) {
+  if (!item || !item.ID) throw new Error('QuickTodo IDがありません。');
+  return updateObjectById_(SHEETS.QUICK_TODOS, item.ID, function(current) {
+    return normalizeQuickTodo_(Object.assign({}, current, item), item.ID, current['作成日'], new Date());
+  });
+}
+
+function deleteQuickTodo(id) {
+  return deleteObjectById_(SHEETS.QUICK_TODOS, id);
+}
+
+function convertQuickTodoToTask(id) {
+  if (!id) throw new Error('案件化するQuickTodo IDがありません。');
+  const item = readSheetAsObjects_(SHEETS.QUICK_TODOS).find(function(row) { return String(row.ID) === String(id); });
+  if (!item) throw new Error('QuickTodoが見つかりません: ' + id);
+  const task = addTask({
+    'タイトル': item['タイトル'],
+    '内容': '',
+    'ステータス': '未着手',
+    '優先度': '中',
+    '期限': item['期限'] || '',
+    '進捗': 0,
+    '今日やるフラグ': true,
+    '関連URL': item['参考URL'] || '',
+    'カテゴリ': 'QuickTodo',
+    '種別': '案件化'
+  });
+  deleteQuickTodo(id);
+  return { task: task, quickTodoId: id };
+}
+
+function addShoppingItem(item) {
+  const now = new Date();
+  const row = normalizeShoppingItem_(item, generateId_('shop'), now, now);
+  appendObject_(SHEETS.SHOPPING_LIST, row);
+  return serializeObject_(row);
+}
+
+function updateShoppingItem(item) {
+  if (!item || !item.ID) throw new Error('買い物リストIDがありません。');
+  return updateObjectById_(SHEETS.SHOPPING_LIST, item.ID, function(current) {
+    return normalizeShoppingItem_(Object.assign({}, current, item), item.ID, current['作成日'], new Date());
+  });
+}
+
+function deleteShoppingItem(id) {
+  return deleteObjectById_(SHEETS.SHOPPING_LIST, id);
+}
+
 function normalizeNotificationStatus_(status) {
   if (status === '完了' || status === 'success') return 'success';
   if (status === '失敗' || status === 'error') return 'error';
@@ -455,6 +542,32 @@ function normalizeImprovementIdea_(item, id, createdAt, updatedAt) {
     '優先度': item['優先度'] || item.priority || '中',
     '作成日': createdAt || new Date(),
     '更新日': updatedAt || new Date()
+  };
+}
+
+function normalizeQuickTodo_(item, id, createdAt, updatedAt) {
+  return {
+    ID: id,
+    'タイトル': item['タイトル'] || item.title || '',
+    '完了フラグ': toBool_(item['完了フラグ'] || item.completed),
+    '作成日': createdAt || new Date(),
+    '更新日': updatedAt || new Date(),
+    '参考URL': item['参考URL'] || item.referenceUrl || '',
+    '期限': normalizeDateKey_(item['期限'] || item.dueDate),
+    '優先度': item['優先度'] || item.priority || '中'
+  };
+}
+
+function normalizeShoppingItem_(item, id, createdAt, updatedAt) {
+  return {
+    ID: id,
+    '商品名': item['商品名'] || item.name || '',
+    '完了フラグ': toBool_(item['完了フラグ'] || item.completed),
+    '作成日': createdAt || new Date(),
+    '更新日': updatedAt || new Date(),
+    '参考URL': item['参考URL'] || item.referenceUrl || '',
+    'カテゴリ': item['カテゴリ'] || item.category || '',
+    '数量': item['数量'] || item.quantity || ''
   };
 }
 

@@ -13,6 +13,11 @@
         <button class="icon-button" type="button" id="menuButton" title="メニュー">☰</button>
       </div>
       <div class="top-actions">
+        <nav class="page-tabs" aria-label="ページ切り替え">
+          <button class="active" type="button" data-page="dashboard">案件管理</button>
+          <button type="button" data-page="quickTodos">クイックTODO</button>
+          <button type="button" data-page="shoppingList">買い物リスト</button>
+        </nav>
         <label class="search-box">
           <span>⌕</span>
           <input id="searchInput" type="search" placeholder="タイトル・内容で検索">
@@ -36,7 +41,7 @@
       </div>
     </header>
 
-    <main class="layout">
+    <main class="layout" id="dashboardPage">
       <aside class="sidebar">
         <button class="nav-item active" data-filter="all" title="タスク一覧"><span class="nav-icon">☷</span><span class="nav-label">タスク一覧</span><b id="countAll">0</b></button>
         <div class="side-section">
@@ -175,6 +180,56 @@
           <div id="weeklyReport" class="weekly-report"></div>
         </section>
       </aside>
+    </main>
+
+    <main class="standalone-page" id="quickTodosPage" hidden>
+      <section class="standalone-panel">
+        <div class="standalone-head">
+          <div>
+            <h1>クイックTODO</h1>
+            <p>小さな作業を一時管理し、必要なものだけ案件化します。</p>
+          </div>
+        </div>
+        <form class="quick-form page-form" id="quickTodoForm">
+          <input id="quickTodoTitle" placeholder="TODOを入力">
+          <select id="quickTodoPriority">
+            <option>高</option>
+            <option selected>中</option>
+            <option>低</option>
+          </select>
+          <input id="quickTodoDueDate" type="date" aria-label="期限">
+          <input id="quickTodoUrl" placeholder="参考URL">
+          <button class="primary-button compact-button" type="submit">追加</button>
+        </form>
+        <div class="segmented page-tabs-small" role="tablist" aria-label="QuickTodo表示">
+          <button class="active" type="button" data-quick-view="open">未完了</button>
+          <button type="button" data-quick-view="done">完了済み</button>
+        </div>
+        <div id="quickTodoList" class="quick-list page-list"></div>
+      </section>
+    </main>
+
+    <main class="standalone-page" id="shoppingListPage" hidden>
+      <section class="standalone-panel">
+        <div class="standalone-head">
+          <div>
+            <h1>買い物リスト</h1>
+            <p>買うもの、数量、商品ページをまとめて確認します。</p>
+          </div>
+        </div>
+        <form class="quick-form page-form" id="shoppingForm">
+          <input id="shoppingName" placeholder="買うものを入力">
+          <input id="shoppingCategory" placeholder="カテゴリ">
+          <input id="shoppingQuantity" placeholder="数量">
+          <input id="shoppingUrl" placeholder="参考URL">
+          <button class="primary-button compact-button" type="submit">追加</button>
+        </form>
+        <div class="segmented page-tabs-small" role="tablist" aria-label="買い物リスト表示">
+          <button class="active" type="button" data-shopping-view="open">未購入</button>
+          <button type="button" data-shopping-view="done">購入済み</button>
+        </div>
+        <div id="shoppingList" class="quick-list page-list"></div>
+      </section>
     </main>
 
     <dialog id="ideaDialog" class="modal">

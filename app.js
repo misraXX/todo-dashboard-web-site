@@ -6,6 +6,8 @@ const state = {
   events: [],
   routines: [],
   routineLogs: [],
+  quickTodos: [],
+  shoppingList: [],
   improvementIdeas: [],
   autoLogs: [],
   selectedTaskId: '',
@@ -14,15 +16,23 @@ const state = {
   categoryFilter: '',
   notificationView: 'unread',
   ideaView: 'open',
+  currentPage: 'dashboard',
+  quickTodoView: 'open',
+  shoppingView: 'open',
   isEditingTask: false
 };
 
 const els = {};
+const pageRuntime = {
+  anchor: null,
+  pages: {}
+};
 
 document.addEventListener('DOMContentLoaded', () => {
   bindElements();
   bindEvents();
   restoreSidebarState();
+  resetQuickTodoDueDate();
   renderActionCenter();
   renderNotifications();
   loadInitialData();
@@ -38,12 +48,22 @@ function bindElements() {
     'taskForm', 'taskSaveButton', 'taskId', 'detailId', 'title', 'body', 'status', 'priority', 'progress', 'dueDate', 'todayFlag',
     'category', 'type', 'relatedUrl', 'chatgptUrl', 'folderUrl', 'nextAction', 'deleteButton', 'timeline', 'todayLabel',
     'calendarRefreshButton', 'currentRoutineLine', 'weeklyRange', 'weeklyReport',
+    'dashboardPage', 'quickTodosPage', 'shoppingListPage',
+    'quickTodoForm', 'quickTodoTitle', 'quickTodoPriority', 'quickTodoDueDate', 'quickTodoUrl', 'quickTodoList',
+    'shoppingForm', 'shoppingName', 'shoppingCategory', 'shoppingQuantity', 'shoppingUrl', 'shoppingList',
     'actionCenterList', 'toggleIdeasButton', 'newIdeaButton',
     'ideaList', 'ideaDialog', 'ideaForm', 'ideaId', 'ideaTitle', 'ideaBody', 'ideaStatus', 'ideaPriority',
     'deleteIdeaButton', 'toast', 'categoryOptions', 'typeOptions'
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
+  pageRuntime.anchor = document.createComment('current-page');
+  els.dashboardPage.before(pageRuntime.anchor);
+  pageRuntime.pages = {
+    dashboard: els.dashboardPage,
+    quickTodos: els.quickTodosPage,
+    shoppingList: els.shoppingListPage
+  };
 }
 
 function bindEvents() {
@@ -72,7 +92,32 @@ function bindEvents() {
   });
   els.newIdeaButton.addEventListener('click', () => openIdeaModal(null));
   els.ideaForm.addEventListener('submit', saveImprovementIdea);
+  els.quickTodoForm.addEventListener('submit', addQuickTodo);
+  els.shoppingForm.addEventListener('submit', addShoppingItem);
   els.deleteIdeaButton.addEventListener('click', (event) => deleteSelectedIdea(event.currentTarget));
+  document.querySelectorAll('[data-page]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.currentPage = button.dataset.page;
+      renderPage();
+      renderCurrentPageContent();
+    });
+  });
+  document.querySelectorAll('[data-quick-view]').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('[data-quick-view]').forEach((item) => item.classList.remove('active'));
+      button.classList.add('active');
+      state.quickTodoView = button.dataset.quickView;
+      renderQuickTodos();
+    });
+  });
+  document.querySelectorAll('[data-shopping-view]').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('[data-shopping-view]').forEach((item) => item.classList.remove('active'));
+      button.classList.add('active');
+      state.shoppingView = button.dataset.shoppingView;
+      renderShoppingList();
+    });
+  });
   document.querySelectorAll('[data-notification-view]').forEach((button) => {
     button.addEventListener('click', () => {
       document.querySelectorAll('[data-notification-view]').forEach((item) => item.classList.remove('active'));
@@ -138,11 +183,15 @@ async function loadInitialData() {
     state.events = data.events || [];
     state.routines = data.routines || [];
     state.routineLogs = data.routineLogs || [];
+    state.quickTodos = data.quickTodos || [];
+    state.shoppingList = data.shoppingList || [];
     state.improvementIdeas = data.improvementIdeas || [];
     state.autoLogs = data.notifications || [];
     els.todayLabel.textContent = formatDateLabel(data.today);
     renderAll();
-    if (!isEditing) {
+    if (state.currentPage !== 'dashboard') {
+      state.selectedTaskId = selectedId;
+    } else if (!isEditing) {
       const selected = state.tasks.find((task) => task.ID === selectedId);
       const first = filteredTasks()[0] || state.tasks[0] || null;
       selectTask(selected ? selected.ID : (first ? first.ID : null));
@@ -158,6 +207,20 @@ async function loadInitialData() {
 }
 
 function renderAll() {
+  renderPage();
+  renderCurrentPageContent();
+}
+
+function renderCurrentPageContent() {
+  if (state.currentPage === 'quickTodos') {
+    resetQuickTodoDueDate();
+    renderQuickTodos();
+    return;
+  }
+  if (state.currentPage === 'shoppingList') {
+    renderShoppingList();
+    return;
+  }
   renderQuickLinks();
   renderCounts();
   renderSideFilters();
@@ -167,6 +230,19 @@ function renderAll() {
   renderOptions();
   renderActionCenter();
   renderNotifications();
+}
+
+function renderPage() {
+  const activePage = pageRuntime.pages[state.currentPage] || pageRuntime.pages.dashboard;
+  Object.values(pageRuntime.pages).forEach((element) => {
+    if (!element) return;
+    element.hidden = false;
+    if (element !== activePage && element.isConnected) element.remove();
+  });
+  if (activePage && !activePage.isConnected) pageRuntime.anchor.after(activePage);
+  document.querySelectorAll('[data-page]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.page === state.currentPage);
+  });
 }
 
 function renderQuickLinks() {
@@ -255,7 +331,15 @@ function renderTasks() {
 
 function taskUrlLink(url, label) {
   if (!url) return '<span class="meta">—</span>';
-  return `<a class="task-url-link" href="${escapeAttr(url)}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">${escapeHtml(label)}</a>`;
+  const iconMap = {
+    ChatGPT: './image/ChatGPT.png',
+    Drive: './image/GoogleDrive.png'
+  };
+  const icon = iconMap[label];
+  const content = icon
+    ? `<img src="${escapeAttr(icon)}" alt="${escapeAttr(label)}">`
+    : escapeHtml(label);
+  return `<a class="task-url-link icon-link" href="${escapeAttr(url)}" target="_blank" rel="noreferrer" title="${escapeAttr(label)}を開く" aria-label="${escapeAttr(label)}を開く" onclick="event.stopPropagation()">${content}</a>`;
 }
 
 function progressBar(value) {
@@ -756,6 +840,225 @@ function average(values) {
   return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
 }
 
+function renderQuickTodos() {
+  if (!els.quickTodoList) return;
+  const items = state.quickTodos.filter((item) => state.quickTodoView === 'done' ? toBool(item['完了フラグ']) : !toBool(item['完了フラグ']));
+  els.quickTodoList.innerHTML = '';
+  if (!items.length) {
+    els.quickTodoList.innerHTML = '<div class="quick-empty">クイックTODOはありません</div>';
+    return;
+  }
+  items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = `quick-row${toBool(item['完了フラグ']) ? ' completed' : ''}`;
+    row.innerHTML = `
+      <label class="quick-check">
+        <input type="checkbox" ${toBool(item['完了フラグ']) ? 'checked' : ''}>
+        <span>
+          <strong>${escapeHtml(item['タイトル'])}</strong>
+          <small>${escapeHtml(dateOnly(item['期限']) || '期限なし')}</small>
+        </span>
+      </label>
+      <div class="quick-meta">${badge(item['優先度'] || '中', priorityClass(item['優先度']))}</div>
+      <div class="quick-actions">
+        ${referenceUrlButton(item['参考URL'])}
+        <button class="quick-action-button primary" type="button" data-quick-action="convert">案件化</button>
+        <button class="quick-action-button" type="button" data-quick-action="edit">編集</button>
+        <button class="quick-action-button" type="button" data-quick-action="delete">削除</button>
+      </div>
+    `;
+    row.querySelector('input')?.addEventListener('change', (event) => updateQuickTodo({ ...item, '完了フラグ': event.currentTarget.checked }, event.currentTarget));
+    row.querySelector('[data-quick-action="convert"]')?.addEventListener('click', (event) => convertQuickTodo(item.ID, event.currentTarget));
+    row.querySelector('[data-quick-action="edit"]')?.addEventListener('click', () => editQuickTodo(item));
+    row.querySelector('[data-quick-action="delete"]')?.addEventListener('click', (event) => deleteQuickTodo(item.ID, event.currentTarget));
+    els.quickTodoList.appendChild(row);
+  });
+}
+
+function renderShoppingList() {
+  if (!els.shoppingList) return;
+  const items = state.shoppingList.filter((item) => state.shoppingView === 'done' ? toBool(item['完了フラグ']) : !toBool(item['完了フラグ']));
+  els.shoppingList.innerHTML = '';
+  if (!items.length) {
+    els.shoppingList.innerHTML = '<div class="quick-empty">買い物リストはありません</div>';
+    return;
+  }
+  items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = `quick-row${toBool(item['完了フラグ']) ? ' completed' : ''}`;
+    row.innerHTML = `
+      <label class="quick-check">
+        <input type="checkbox" ${toBool(item['完了フラグ']) ? 'checked' : ''}>
+        <span>
+          <strong>${escapeHtml(item['商品名'])}</strong>
+          <small>${escapeHtml([item['カテゴリ'], item['数量']].filter(Boolean).join(' / ') || 'カテゴリなし')}</small>
+        </span>
+      </label>
+      <div class="quick-actions">
+        ${referenceUrlButton(item['参考URL'])}
+        <button class="quick-action-button" type="button" data-shopping-action="edit">編集</button>
+        <button class="quick-action-button" type="button" data-shopping-action="delete">削除</button>
+      </div>
+    `;
+    row.querySelector('input')?.addEventListener('change', (event) => updateShoppingItem({ ...item, '完了フラグ': event.currentTarget.checked }, event.currentTarget));
+    row.querySelector('[data-shopping-action="edit"]')?.addEventListener('click', () => editShoppingItem(item));
+    row.querySelector('[data-shopping-action="delete"]')?.addEventListener('click', (event) => deleteShoppingItem(item.ID, event.currentTarget));
+    els.shoppingList.appendChild(row);
+  });
+}
+
+function referenceUrlButton(url) {
+  if (!url) return '';
+  return `<a class="quick-action-button" href="${escapeAttr(url)}" target="_blank" rel="noreferrer">開く</a>`;
+}
+
+async function addQuickTodo(event) {
+  event.preventDefault();
+  const title = els.quickTodoTitle.value.trim();
+  if (!title) return;
+  const button = event.submitter;
+  return runButtonTask(button, '追加中...', async () => {
+    const saved = await apiPost('addQuickTodo', {
+      'タイトル': title,
+      '参考URL': els.quickTodoUrl.value.trim(),
+      '期限': els.quickTodoDueDate.value,
+      '優先度': els.quickTodoPriority.value,
+      '完了フラグ': false
+    });
+    state.quickTodos.unshift(saved);
+    els.quickTodoForm.reset();
+    resetQuickTodoDueDate();
+    renderQuickTodos();
+    toast('QuickTodoを追加しました');
+  }).catch(showError);
+}
+
+function resetQuickTodoDueDate() {
+  if (els.quickTodoDueDate && !els.quickTodoDueDate.value) {
+    els.quickTodoDueDate.value = todayInputValue();
+  }
+}
+
+async function updateQuickTodo(item, input) {
+  if (!item.ID || input.disabled) return;
+  input.disabled = true;
+  try {
+    const saved = await apiPost('updateQuickTodo', item);
+    const index = state.quickTodos.findIndex((row) => row.ID === saved.ID);
+    if (index >= 0) state.quickTodos.splice(index, 1, saved);
+    renderQuickTodos();
+  } catch (error) {
+    input.checked = !input.checked;
+    showError(error);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+async function deleteQuickTodo(id, button) {
+  if (!id || !confirm('このQuickTodoを削除しますか？')) return;
+  return runButtonTask(button, '削除中...', async () => {
+    await apiPost('deleteQuickTodo', { id });
+    state.quickTodos = state.quickTodos.filter((item) => item.ID !== id);
+    renderQuickTodos();
+    toast('QuickTodoを削除しました');
+  }).catch(showError);
+}
+
+async function editQuickTodo(item) {
+  const title = prompt('TODOを編集', item['タイトル'] || '');
+  if (title === null) return;
+  const dueDate = prompt('期限（yyyy-mm-dd / 空欄可）', item['期限'] || '');
+  if (dueDate === null) return;
+  const priority = prompt('優先度（高 / 中 / 低）', item['優先度'] || '中');
+  if (priority === null) return;
+  const referenceUrl = prompt('参考URL（空欄可）', item['参考URL'] || '');
+  if (referenceUrl === null) return;
+  await updateQuickTodo({
+    ...item,
+    'タイトル': title.trim(),
+    '期限': dueDate.trim(),
+    '優先度': ['高', '中', '低'].includes(priority.trim()) ? priority.trim() : '中',
+    '参考URL': referenceUrl.trim()
+  }, { disabled: false });
+}
+
+async function convertQuickTodo(id, button) {
+  if (!id) return;
+  return runButtonTask(button, '案件化中...', async () => {
+    const result = await apiPost('convertQuickTodoToTask', { id });
+    state.quickTodos = state.quickTodos.filter((item) => item.ID !== id);
+    if (result.task) state.tasks.push(result.task);
+    renderAll();
+    if (result.task?.ID) selectTask(result.task.ID);
+    toast('QuickTodoを案件化しました');
+  }).catch(showError);
+}
+
+async function addShoppingItem(event) {
+  event.preventDefault();
+  const name = els.shoppingName.value.trim();
+  if (!name) return;
+  const button = event.submitter;
+  return runButtonTask(button, '追加中...', async () => {
+    const saved = await apiPost('addShoppingItem', {
+      '商品名': name,
+      '参考URL': els.shoppingUrl.value.trim(),
+      'カテゴリ': els.shoppingCategory.value.trim(),
+      '数量': els.shoppingQuantity.value.trim(),
+      '完了フラグ': false
+    });
+    state.shoppingList.unshift(saved);
+    els.shoppingForm.reset();
+    renderShoppingList();
+    toast('買い物リストに追加しました');
+  }).catch(showError);
+}
+
+async function updateShoppingItem(item, input) {
+  if (!item.ID || input.disabled) return;
+  input.disabled = true;
+  try {
+    const saved = await apiPost('updateShoppingItem', item);
+    const index = state.shoppingList.findIndex((row) => row.ID === saved.ID);
+    if (index >= 0) state.shoppingList.splice(index, 1, saved);
+    renderShoppingList();
+  } catch (error) {
+    input.checked = !input.checked;
+    showError(error);
+  } finally {
+    input.disabled = false;
+  }
+}
+
+async function deleteShoppingItem(id, button) {
+  if (!id || !confirm('この買い物リストを削除しますか？')) return;
+  return runButtonTask(button, '削除中...', async () => {
+    await apiPost('deleteShoppingItem', { id });
+    state.shoppingList = state.shoppingList.filter((item) => item.ID !== id);
+    renderShoppingList();
+    toast('買い物リストを削除しました');
+  }).catch(showError);
+}
+
+async function editShoppingItem(item) {
+  const name = prompt('商品名を編集', item['商品名'] || '');
+  if (name === null) return;
+  const category = prompt('カテゴリ（空欄可）', item['カテゴリ'] || '');
+  if (category === null) return;
+  const quantity = prompt('数量（空欄可）', item['数量'] || '');
+  if (quantity === null) return;
+  const referenceUrl = prompt('参考URL（空欄可）', item['参考URL'] || '');
+  if (referenceUrl === null) return;
+  await updateShoppingItem({
+    ...item,
+    '商品名': name.trim(),
+    'カテゴリ': category.trim(),
+    '数量': quantity.trim(),
+    '参考URL': referenceUrl.trim()
+  }, { disabled: false });
+}
+
 function taskIdeaCount(taskId) {
   return state.improvementIdeas.filter((idea) => idea.TaskID === taskId).length;
 }
@@ -1045,6 +1348,10 @@ function dateKey(value) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function todayInputValue() {
+  return dateKey(new Date());
 }
 
 function currentWeekRange() {
